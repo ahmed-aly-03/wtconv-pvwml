@@ -70,8 +70,8 @@ generate_pseudo_masks.py     optional pseudo-mask generator CLI
 ```bash
 git clone https://github.com/ahmed-aly-03/wtconv-pvwml.git
 cd wtconv-pvwml
-python3 -m venv .venv
-source .venv/bin/activate
+conda create -n wtconv-pvwml python=3.12 -y
+conda activate wtconv-pvwml
 
 # Install torch matching your CUDA version FIRST (check with `nvidia-smi` /
 # `nvcc --version`), e.g. for CUDA 12.1:
