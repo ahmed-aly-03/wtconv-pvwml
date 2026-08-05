@@ -1,0 +1,10 @@
+# Install torch/torchvision separately, matching your GPU server's CUDA version,
+# e.g.: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# See README.md for details -- do not blindly pip install torch from this file.
+timm==1.0.7
+PyWavelets==1.6.0
+scikit-image>=0.19,<0.26
+scikit-learn>=1.3
+pillow>=9.0
+numpy>=1.24
+scipy>=1.10
