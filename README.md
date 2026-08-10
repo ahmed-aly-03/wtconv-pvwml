@@ -23,6 +23,45 @@ Both scripts print a `sklearn` classification report + confusion matrix at
 the end and save them (plus per-epoch history and the best checkpoint) into
 whatever `--output-dir` you pass on the CLI.
 
+## Classification loss: Asymmetric Loss (ASL) is now the default
+
+A full TDLF run (SCL stage 1 + CE stage 2, class-balanced sampling) landed at
+44.8% val accuracy with `vMCIAD` precision 0.12 -- recall was fine (0.59) but
+precision collapsed, i.e. the model was flooding `vMCIAD` with false
+positives from the majority classes. That's the textbook failure mode plain
+cross-entropy has on severe imbalance: easy-negative gradients (a
+confidently-not-vMCIAD `Non-vascular` scan) dominate training regardless of
+class weighting, because weighting only rescales the loss, it doesn't change
+which examples' gradients dominate.
+
+Both scripts now default their classification loss (`L_cls` in script 1,
+the stage-2 classifier loss in script 2) to **Asymmetric Loss** (Ridnik et
+al., *"Asymmetric Loss for Multi-Label Classification"*, ICCV 2021),
+attached for this exact reason. ASL treats each class as an independent
+one-vs-rest binary decision and applies two mechanisms only to the negative
+side of each: asymmetric focusing (`gamma_neg=4` vs `gamma_pos=0` --
+down-weight easy negatives far more than positives) and a hard probability
+margin (`clip=0.05` -- fully zero the gradient from very-easy negatives).
+The paper explicitly validates this for single-label classification too,
+not just multi-label. See `src/losses.py::AsymmetricLoss` for the full
+rationale and the exact formula. Old behavior is still available via
+`--cls-loss ce` (script 1) / `--classifier-loss ce` or `balanced_softmax`
+(script 2).
+
+ASL is not designed to be combined with static class weights or resampling
+(the paper found weighting and focusing interact badly) -- script 2 now
+exposes `--no-class-balanced-sampling` so you can try ASL on its own if ASL
++ sampling together turns out to over-correct.
+
+## Full volumes now available (deferred)
+
+You mentioned full NIfTI volumes are now available (not just the
+middle-50-slice crops used so far), which should give the model more to
+learn from. That dataset needs sorting into classes and train/val/test
+splits before either script can use it -- intentionally not done yet, per
+your call to worry about it later. Nothing in this repo depends on it
+today.
+
 ## About the segmentation branch -- read this first
 
 **There are no PVWML segmentation masks in the dataset** (`swml_vols_middle50_4class`
@@ -55,7 +94,8 @@ src/
                             dataset for contrastive learning)
   pseudo_masks.py           heuristic PVWML pseudo-mask extraction
   multitask_model.py         script 1 model (encoder/BN/decoder/classifier)
-  losses.py                 script 1 losses (Dice+BCE seg, combined loss)
+  losses.py                 shared classification loss (AsymmetricLoss) +
+                            script 1 losses (Dice+BCE seg, combined loss)
   tdlf_model.py              script 2 model wrappers (normalized backbone,
                             projection head, frozen-backbone classifier)
   tdlf_losses.py             script 2 losses (PGD view construction, AWP,
@@ -140,6 +180,10 @@ Outputs land in `--output-dir`: `<model>_multitask.pth` (best checkpoint),
 `..._epoch_history.csv`, and `..._validation_metrics.txt` (classification
 report + confusion matrix).
 
+`L_cls` defaults to Asymmetric Loss (see above); add `--cls-loss ce` to
+compare against plain class-weighted cross-entropy, or tune
+`--asl-gamma-neg` / `--asl-gamma-pos` / `--asl-clip`.
+
 ## Running script 2 (TDLF finetuning)
 
 ```bash
@@ -168,6 +212,10 @@ Outputs in `--output-dir`: `<model>_tdlf_stage1_backbone.pth` +
 `..._epoch_history.csv`, and `..._validation_metrics.txt` (classification
 report + confusion matrix) from stage 2.
 
+Stage 2's classifier loss defaults to Asymmetric Loss now (see above). To
+reproduce the earlier CE run for comparison: `--classifier-loss ce`. To try
+ASL without class-balanced sampling stacked on top: `--no-class-balanced-sampling`.
+
 If you already have a finetuned backbone and only want to redo the
 classifier stage, use `--skip-stage1 --pretrained-path /path/to/stage1_backbone.pth`.
 
@@ -195,3 +243,7 @@ tail -f outputs_multitask.log
 - Adversarial perturbation and AWP in script 2 operate directly on raw
   `[0,1]` pixel tensors (normalization happens inside `TDLFBackbone`), so
   `--pgd-epsilon 8/255` stays meaningful in the same units the paper uses.
+- ASL reference: Ridnik, Ben-Baruch, Zamir, Noy, Friedman, Protter &
+  Zelnik-Manor, *"Asymmetric Loss for Multi-Label Classification"*, ICCV
+  2021. Official implementation: https://github.com/Alibaba-MIIL/ASL
+  (`src/losses.py::AsymmetricLoss` reimplements Eq. 7 from the paper).

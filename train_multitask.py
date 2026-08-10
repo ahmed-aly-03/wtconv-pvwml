@@ -4,6 +4,10 @@ classification), built on the WTConvNeXt backbone.
 
 L = L_cls + lambda * L_seg   (lambda defaults to 0.3)
 
+L_cls defaults to Asymmetric Loss (Ridnik et al., ICCV 2021) rather than
+plain cross-entropy -- see src/losses.py::AsymmetricLoss for why. Pass
+--cls-loss ce to fall back to class-weighted cross-entropy.
+
 If you don't pass --mask-dir, the model still trains end-to-end but the
 segmentation branch receives no gradient (see src/losses.py::SegmentationLoss)
 -- it stays architecturally in place for when real PVWML masks exist.
@@ -134,6 +138,11 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=5e-2)
     parser.add_argument("--seg-loss-weight", type=float, default=0.3, help="lambda in L = L_cls + lambda * L_seg")
+    parser.add_argument("--cls-loss", type=str, default="asymmetric", choices=["asymmetric", "ce"],
+                         help="Asymmetric Loss (Ridnik et al., ICCV 2021, one-vs-rest) by default; 'ce' for plain class-weighted cross-entropy.")
+    parser.add_argument("--asl-gamma-neg", type=float, default=4.0)
+    parser.add_argument("--asl-gamma-pos", type=float, default=0.0)
+    parser.add_argument("--asl-clip", type=float, default=0.05)
     parser.add_argument("--drop-path-rate", type=float, default=0.1)
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--output-dir", type=str, default="./outputs_multitask")
@@ -155,7 +164,10 @@ def main():
         raise ValueError(f"Expected {args.num_classes} classes, found {len(class_names)}: {class_names}")
 
     class_weights = compute_class_weights(train_loader.dataset, args.num_classes).to(device)
-    print("Class weights (inverse frequency):", class_weights.tolist())
+    if args.cls_loss == "ce":
+        print("Class weights (inverse frequency):", class_weights.tolist())
+    else:
+        print(f"Class weights (inverse frequency): {class_weights.tolist()} (unused -- {args.cls_loss} loss handles imbalance via its own asymmetric weighting, not static class weights)")
 
     model = build_multitask_model(
         variant=args.model_name,
@@ -165,7 +177,14 @@ def main():
         drop_path_rate=args.drop_path_rate,
     ).to(device)
 
-    criterion = MultiTaskLoss(class_weights=class_weights, seg_loss_weight=args.seg_loss_weight)
+    criterion = MultiTaskLoss(
+        class_weights=class_weights,
+        seg_loss_weight=args.seg_loss_weight,
+        cls_loss=args.cls_loss,
+        asl_gamma_neg=args.asl_gamma_neg,
+        asl_gamma_pos=args.asl_gamma_pos,
+        asl_clip=args.asl_clip,
+    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 

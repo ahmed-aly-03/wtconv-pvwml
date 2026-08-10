@@ -12,6 +12,12 @@ the paper".
 
 Stage 2 (classifier learning): the backbone is frozen and a linear
 classifier head is trained with class-balanced sampling (Sec. 4.2, Eq. 11).
+Default loss is Asymmetric Loss (Ridnik et al., ICCV 2021, one-vs-rest;
+see src/losses.py::AsymmetricLoss) rather than plain cross-entropy -- a run
+with --classifier-loss ce on this dataset showed the classic easy-negative-
+domination failure (vMCIAD precision 0.12: constant false-positive flooding
+from the majority classes despite decent recall). Pass --classifier-loss ce
+or balanced_softmax to compare against the older behavior.
 
 Both stages print a classification report + confusion matrix and save them,
 along with per-epoch history, into --output-dir.
@@ -36,6 +42,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from datasets import get_classification_dataloaders_raw, get_two_view_dataloader  # noqa: E402
+from losses import AsymmetricLoss  # noqa: E402
 from tdlf_losses import AdversarialWeightPerturbation, SupervisedContrastiveLoss, generate_adversarial_views  # noqa: E402
 from tdlf_model import TDLFBackbone, TDLFClassifier, TDLFRepresentationModel  # noqa: E402
 
@@ -155,7 +162,7 @@ def evaluate_stage2(model, loader, criterion, device):
 
 
 def train_stage2(args, device, backbone):
-    print("\n========== Stage 2: frozen-encoder classifier learning (class-balanced sampling) ==========\n")
+    print("\n========== Stage 2: frozen-encoder classifier learning ==========\n")
 
     for p in backbone.parameters():
         p.requires_grad_(False)
@@ -164,14 +171,18 @@ def train_stage2(args, device, backbone):
     model = TDLFClassifier(backbone, args.num_classes).to(device)
 
     train_loader, val_loader, train_dataset = get_classification_dataloaders_raw(
-        args.data_dir, args.img_size, args.batch_size, args.num_workers, class_balanced=True,
+        args.data_dir, args.img_size, args.batch_size, args.num_workers,
+        class_balanced=args.class_balanced_sampling,
     )
     class_names = train_dataset.classes
     print("Classes:", class_names)
+    print(f"Class-balanced sampling: {args.class_balanced_sampling} | Classifier loss: {args.classifier_loss}")
     if len(class_names) != args.num_classes:
         raise ValueError(f"Expected {args.num_classes} classes, found {len(class_names)}: {class_names}")
 
-    if args.classifier_loss == "balanced_softmax":
+    if args.classifier_loss == "asymmetric":
+        criterion = AsymmetricLoss(gamma_neg=args.asl_gamma_neg, gamma_pos=args.asl_gamma_pos, clip=args.asl_clip).to(device)
+    elif args.classifier_loss == "balanced_softmax":
         from collections import Counter
         counts = Counter(t for _, t in train_dataset.samples)
         class_counts = torch.tensor([counts.get(c, 0) for c in range(args.num_classes)], dtype=torch.float32)
@@ -291,7 +302,14 @@ def main():
     # Stage 2: classifier learning
     parser.add_argument("--stage2-epochs", type=int, default=25)
     parser.add_argument("--stage2-lr", type=float, default=1e-4)
-    parser.add_argument("--classifier-loss", type=str, default="ce", choices=["ce", "balanced_softmax"])
+    parser.add_argument("--classifier-loss", type=str, default="asymmetric", choices=["asymmetric", "ce", "balanced_softmax"],
+                         help="Asymmetric Loss (Ridnik et al., ICCV 2021, one-vs-rest) by default -- targets the easy-negative-domination failure mode plain CE showed on this dataset. 'ce'/'balanced_softmax' remain available for comparison.")
+    parser.add_argument("--asl-gamma-neg", type=float, default=4.0)
+    parser.add_argument("--asl-gamma-pos", type=float, default=0.0)
+    parser.add_argument("--asl-clip", type=float, default=0.05)
+    parser.add_argument("--class-balanced-sampling", action="store_true", default=True)
+    parser.add_argument("--no-class-balanced-sampling", dest="class_balanced_sampling", action="store_false",
+                         help="ASL does not require resampling to handle imbalance (paper avoids combining static/sampling-based rebalancing with its asymmetric weighting); worth trying if ASL + sampling together over-corrects.")
 
     parser.add_argument("--skip-stage1", action="store_true", help="Skip straight to Stage 2 using --pretrained-path as the (already-finetuned) backbone.")
     parser.add_argument("--output-dir", type=str, required=True)
