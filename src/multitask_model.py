@@ -22,6 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from timm.layers import LayerNorm2d
 
+from checkpoint_utils import load_state_dict_flexible
 from wtconvnext.wtconvnext import WTConvNeXtBlock, wtconvnext_base, wtconvnext_small, wtconvnext_tiny
 
 _MODEL_FNS = {
@@ -45,19 +46,14 @@ class WTConvNeXtEncoder(nn.Module):
         self.reductions: List[int] = [info["reduction"] for info in self.backbone.feature_info]
 
     def load_pretrained(self, checkpoint_path: str, map_location="cpu") -> None:
-        state_dict = torch.load(checkpoint_path, map_location=map_location)
-        if isinstance(state_dict, dict) and "state_dict" in state_dict:
-            state_dict = state_dict["state_dict"]
         # Drop the ImageNet classifier head; num_classes=0 here means the
         # encoder has no head to load it into.
-        state_dict = {k: v for k, v in state_dict.items() if not k.startswith("head.")}
-        missing, unexpected = self.backbone.load_state_dict(state_dict, strict=False)
-        missing = [m for m in missing if not m.startswith("head.")]
-        print(f"Loaded pretrained encoder from {checkpoint_path}")
-        if missing:
-            print(f"  missing keys: {missing}")
-        if unexpected:
-            print(f"  unexpected keys: {unexpected}")
+        load_state_dict_flexible(
+            self.backbone,
+            checkpoint_path,
+            wrapper_keys=("state_dict",),
+            map_location=map_location,
+        )
 
     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
         x = self.backbone.stem(x)

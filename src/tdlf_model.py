@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from checkpoint_utils import load_state_dict_flexible
 from datasets import IMAGENET_MEAN, IMAGENET_STD
 from wtconvnext.wtconvnext import wtconvnext_base, wtconvnext_small, wtconvnext_tiny
 
@@ -44,17 +45,14 @@ class TDLFBackbone(nn.Module):
         self.num_features = self.backbone.num_features
 
     def load_pretrained(self, checkpoint_path: str, map_location="cpu") -> None:
-        state_dict = torch.load(checkpoint_path, map_location=map_location)
-        if isinstance(state_dict, dict) and "state_dict" in state_dict:
-            state_dict = state_dict["state_dict"]
-        state_dict = {k: v for k, v in state_dict.items() if not k.startswith("head.")}
-        missing, unexpected = self.backbone.load_state_dict(state_dict, strict=False)
-        missing = [m for m in missing if not m.startswith("head.")]
-        print(f"Loaded pretrained backbone from {checkpoint_path}")
-        if missing:
-            print(f"  missing keys: {missing}")
-        if unexpected:
-            print(f"  unexpected keys: {unexpected}")
+        # Handles both external ImageNet checkpoints (raw state dict) and
+        # this script's own Stage 1 output (wrapped under "backbone_state_dict").
+        load_state_dict_flexible(
+            self.backbone,
+            checkpoint_path,
+            wrapper_keys=("backbone_state_dict", "state_dict"),
+            map_location=map_location,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """x in [0, 1]. Returns pre-pool feature map (B, C, H, W)."""

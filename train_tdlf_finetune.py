@@ -130,8 +130,12 @@ def train_stage1(args, device):
             f.write(f"{row['epoch']},{row['scl_loss']:.6f}\n")
     print(f"Stage 1 history saved to: {history_path}")
 
+    # Save the inner WTConvNeXt module's state dict, not the TDLFBackbone
+    # wrapper's (which would prefix every key with "backbone." and include
+    # the non-learned normalize buffers) -- this must match what
+    # TDLFBackbone.load_pretrained() loads into on the other end.
     backbone_ckpt_path = os.path.join(args.output_dir, f"{args.model_name}_tdlf_stage1_backbone.pth")
-    torch.save({"backbone_state_dict": backbone.state_dict(), "model_name": args.model_name}, backbone_ckpt_path)
+    torch.save({"backbone_state_dict": backbone.backbone.state_dict(), "model_name": args.model_name}, backbone_ckpt_path)
     print(f"Stage 1 backbone checkpoint saved to: {backbone_ckpt_path}")
 
     return backbone
