@@ -1,0 +1,271 @@
+<title>Script 1 — Multitask WTConvNeXt Architecture</title>
+<style>
+  :root {
+    --bg: #f5f6f4;
+    --paper: #ffffff;
+    --ink: #1c2024;
+    --ink-muted: #565f66;
+    --line: #d7dbd8;
+    --accent: #2c6e75;
+    --accent-soft: rgba(44,110,117,0.10);
+    --accent2: #a6672f;
+    --accent2-soft: rgba(166,103,47,0.12);
+    --gated: #7a7f85;
+    --gated-soft: rgba(122,127,133,0.09);
+    --mono-bg: #eef0ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --paper: #1b1f23; --ink: #e8eaec; --ink-muted: #9aa3ab;
+      --line: #30363c; --accent: #64b8bf; --accent-soft: rgba(100,184,191,0.14);
+      --accent2: #e0a262; --accent2-soft: rgba(224,162,98,0.14);
+      --gated: #9299a0; --gated-soft: rgba(146,153,160,0.12);
+      --mono-bg: #22262a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171a; --paper: #1b1f23; --ink: #e8eaec; --ink-muted: #9aa3ab;
+    --line: #30363c; --accent: #64b8bf; --accent-soft: rgba(100,184,191,0.14);
+    --accent2: #e0a262; --accent2-soft: rgba(224,162,98,0.14);
+    --gated: #9299a0; --gated-soft: rgba(146,153,160,0.12);
+    --mono-bg: #22262a;
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f6f4; --paper: #ffffff; --ink: #1c2024; --ink-muted: #565f66;
+    --line: #d7dbd8; --accent: #2c6e75; --accent-soft: rgba(44,110,117,0.10);
+    --accent2: #a6672f; --accent2-soft: rgba(166,103,47,0.12);
+    --gated: #7a7f85; --gated-soft: rgba(122,127,133,0.09);
+    --mono-bg: #eef0ee;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .page { max-width: 780px; margin: 0 auto; padding: 48px 28px 72px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 30px; }
+  .eyebrow {
+    font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-muted); margin: 0 0 8px;
+  }
+  h1 {
+    font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+    font-size: 27px; font-weight: 600; margin: 0 0 6px;
+    text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .subtitle { color: var(--ink-muted); font-size: 14.5px; margin: 0; max-width: 62ch; }
+  h2 {
+    font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+    font-size: 17px; font-weight: 600; margin: 0 0 4px;
+  }
+  .stage-block { margin-bottom: 26px; }
+  .stage-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 10px; }
+  .stage-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; position: relative; top: -1px; }
+  .stage-dot.trunk { background: var(--accent); }
+  .stage-dot.active { background: var(--accent2); }
+  .stage-dot.gated { background: var(--gated); border: 1.5px dashed var(--gated); background: transparent; }
+  ul.bullets { margin: 0; padding-left: 20px; }
+  ul.bullets li { margin-bottom: 7px; font-size: 14.5px; max-width: 66ch; }
+  ul.bullets li::marker { color: var(--ink-muted); }
+  code {
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+    background: var(--mono-bg); padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.88em;
+  }
+  figure {
+    margin: 34px 0 8px; padding: 18px 16px 12px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .svg-scroll { overflow-x: auto; }
+  figure svg { width: 100%; height: auto; display: block; color: var(--ink); min-width: 760px; }
+  figcaption { font-size: 12.5px; color: var(--ink-muted); margin-top: 12px; max-width: 68ch; }
+  .callout {
+    margin-top: 30px; padding: 14px 16px; border-radius: 8px;
+    background: var(--gated-soft); border: 1px dashed var(--gated);
+    font-size: 13.5px; color: var(--ink);
+  }
+  .callout strong { color: var(--ink); }
+  footer {
+    margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-muted);
+  }
+</style>
+
+<div class="page">
+
+  <header>
+    <p class="eyebrow">Weekly research update — architecture note</p>
+    <h1>Script 1: multitask WTConvNeXt (encoder–bottleneck–decoder + classifier)</h1>
+    <p class="subtitle">Joint segmentation/classification model from the block-diagram design, built on the shared WTConvNeXt backbone — currently trained classification-only pending real PVWML masks</p>
+  </header>
+
+  <div class="stage-block">
+    <div class="stage-head">
+      <span class="stage-dot trunk"></span>
+      <h2>Shared encoder + bottleneck</h2>
+    </div>
+    <ul class="bullets">
+      <li>A single, unmodified <code>wtconvnext_tiny</code>/<code>small</code> backbone produces features at 4 scales (56²→7², 96→768 channels); ImageNet-pretrained weights load directly into it.</li>
+      <li>A bottleneck (<code>BN</code> in the diagram) reuses the base model's own <code>WTConvNeXtBlock</code>, stacked twice, on the deepest features — keeps the new code consistent with the base architecture rather than introducing a different conv layer.</li>
+      <li>Both task branches read from this same bottleneck output, so the encoder gets gradient signal from whichever branch(es) below are actually supervised.</li>
+    </ul>
+  </div>
+
+  <div class="stage-block">
+    <div class="stage-head">
+      <span class="stage-dot active"></span>
+      <h2>Classification branch — active today</h2>
+    </div>
+    <ul class="bullets">
+      <li>GAP → Linear head off the bottleneck features → <code>L_cls</code>: cross-entropy, weighted by inverse class frequency computed automatically from the train split (not hardcoded).</li>
+      <li>This is the only branch with real supervision right now — no PVWML masks exist yet — so the model is fully trainable and useful today through this path alone.</li>
+    </ul>
+  </div>
+
+  <div class="stage-block">
+    <div class="stage-head">
+      <span class="stage-dot gated"></span>
+      <h2>Segmentation branch — present, gated</h2>
+    </div>
+    <ul class="bullets">
+      <li>Standard U-Net-style decoder: 3 upsampling blocks with skip connections from encoder stages 0–2, ending in a segmentation head upsampled back to 224×224.</li>
+      <li>Loss is BCE + soft Dice (the standard combination for imbalanced pixel-wise medical segmentation), computed only over samples that actually have a mask — batches with none contribute exactly 0 to <code>L_seg</code>, so training degrades gracefully to classification-only.</li>
+      <li>Combined loss <code>L = L_cls + λ·L_seg</code>, with <code>λ</code> a plain CLI float (<code>--seg-loss-weight</code>) defaulting to <code>0.3</code> — not learned.</li>
+      <li>Turns on for real the moment <code>--mask-dir</code> is passed, pointing at either real annotations or the heuristic FLAIR pseudo-masks from <code>generate_pseudo_masks.py</code> (explicitly not ground truth).</li>
+    </ul>
+  </div>
+
+  <figure>
+    <div class="svg-scroll">
+      <svg viewBox="0 0 1120 640" role="img" aria-label="An input MRI slice passes through four encoder stages of increasing depth and decreasing resolution, feeding a shared bottleneck. From the bottleneck, a classification branch runs GAP then a linear head into a cross-entropy loss. A second, gated segmentation branch runs three decoder upsampling blocks, each receiving a skip connection from the matching encoder stage, into a segmentation head and a BCE plus Dice loss that is zero unless masks are present. Both losses combine into L equals L_cls plus lambda times L_seg.">
+        <defs>
+          <marker id="arrowN" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arrowT" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+          <marker id="arrowA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent2)"/>
+          </marker>
+          <marker id="arrowG" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--gated)"/>
+          </marker>
+        </defs>
+
+        <text x="10" y="24" font-size="12.5" font-weight="700" fill="currentColor" letter-spacing="0.03em">ENCODER (WTConvNeXt, shared)</text>
+
+        <!-- Row 1: encoder, y 44-104 -->
+        <rect x="10" y="44" width="80" height="60" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="50" y="70" font-size="10.5" text-anchor="middle" fill="currentColor">FLAIR</text>
+        <text x="50" y="83" font-size="10.5" text-anchor="middle" fill="currentColor">224²</text>
+        <line x1="90" y1="74" x2="118" y2="74" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrowN)"/>
+
+        <rect x="120" y="44" width="120" height="60" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="180" y="68" font-size="10.5" text-anchor="middle" fill="currentColor">Stage 0 (f0)</text>
+        <text x="180" y="82" font-size="9.5" text-anchor="middle" fill="var(--ink-muted)">56² × 96ch</text>
+        <line x1="240" y1="74" x2="268" y2="74" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrowN)"/>
+
+        <rect x="270" y="44" width="120" height="60" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="330" y="68" font-size="10.5" text-anchor="middle" fill="currentColor">Stage 1 (f1)</text>
+        <text x="330" y="82" font-size="9.5" text-anchor="middle" fill="var(--ink-muted)">28² × 192ch</text>
+        <line x1="390" y1="74" x2="418" y2="74" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrowN)"/>
+
+        <rect x="420" y="44" width="120" height="60" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="480" y="68" font-size="10.5" text-anchor="middle" fill="currentColor">Stage 2 (f2)</text>
+        <text x="480" y="82" font-size="9.5" text-anchor="middle" fill="var(--ink-muted)">14² × 384ch</text>
+        <line x1="540" y1="74" x2="568" y2="74" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrowN)"/>
+
+        <rect x="570" y="44" width="120" height="60" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="630" y="68" font-size="10.5" text-anchor="middle" fill="currentColor">Stage 3 (f3)</text>
+        <text x="630" y="82" font-size="9.5" text-anchor="middle" fill="var(--ink-muted)">7² × 768ch</text>
+
+        <line x1="630" y1="104" x2="630" y2="136" stroke="var(--accent)" stroke-width="1.3" marker-end="url(#arrowT)"/>
+
+        <!-- Bottleneck + classification row, y 140-200 -->
+        <rect x="570" y="140" width="120" height="60" rx="7" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+        <text x="630" y="164" font-size="10.5" text-anchor="middle" fill="var(--accent)" font-weight="700">Bottleneck</text>
+        <text x="630" y="177" font-size="9" text-anchor="middle" fill="currentColor">2× WTConvNeXt-</text>
+        <text x="630" y="188" font-size="9" text-anchor="middle" fill="currentColor">Block</text>
+
+        <text x="825" y="130" font-size="11" font-weight="700" fill="var(--accent2)" letter-spacing="0.02em">CLASSIFICATION — ACTIVE</text>
+        <line x1="690" y1="170" x2="718" y2="170" stroke="var(--accent2)" stroke-width="1.3" marker-end="url(#arrowA)"/>
+        <rect x="720" y="140" width="70" height="60" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="755" y="174" font-size="10.5" text-anchor="middle" fill="currentColor">GAP</text>
+        <line x1="790" y1="170" x2="818" y2="170" stroke="var(--accent2)" stroke-width="1.3" marker-end="url(#arrowA)"/>
+        <rect x="820" y="140" width="110" height="60" rx="7" fill="var(--accent2-soft)" stroke="var(--accent2)" stroke-width="1.3"/>
+        <text x="875" y="166" font-size="10.5" text-anchor="middle" fill="var(--accent2)" font-weight="700">Linear head</text>
+        <text x="875" y="180" font-size="9" text-anchor="middle" fill="currentColor">(trainable)</text>
+        <line x1="930" y1="170" x2="958" y2="170" stroke="var(--accent2)" stroke-width="1.3" marker-end="url(#arrowA)"/>
+        <rect x="960" y="130" width="150" height="80" rx="7" fill="var(--accent2-soft)" stroke="var(--accent2)" stroke-width="1.3"/>
+        <text x="1035" y="156" font-size="10.5" text-anchor="middle" fill="var(--accent2)" font-weight="700">L_cls</text>
+        <text x="1035" y="170" font-size="9" text-anchor="middle" fill="currentColor">CrossEntropy</text>
+        <text x="1035" y="182" font-size="9" text-anchor="middle" fill="currentColor">(class-weighted)</text>
+
+        <!-- Segmentation label + note -->
+        <text x="10" y="244" font-size="11" font-weight="700" fill="var(--gated)" letter-spacing="0.02em">SEGMENTATION — GATED (decoder + skip connections)</text>
+        <text x="10" y="258" font-size="9.5" font-style="italic" fill="var(--ink-muted)">dashed = inactive unless --mask-dir is passed</text>
+
+        <!-- skip connections, vertical dashed, from encoder row bottom (104) to decoder row top (270) -->
+        <line x1="180" y1="104" x2="180" y2="266" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+        <line x1="330" y1="104" x2="330" y2="266" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+        <line x1="480" y1="104" x2="480" y2="266" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+
+        <!-- bottleneck trunk continues down into Up1 -->
+        <path d="M 630 200 L 630 226 L 500 226 L 500 266" fill="none" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+
+        <!-- Row 3: decoder, y 270-330, right to left -->
+        <rect x="420" y="270" width="120" height="60" rx="7" fill="var(--gated-soft)" stroke="var(--gated)" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="480" y="294" font-size="10.5" text-anchor="middle" fill="currentColor">Decoder Up1</text>
+        <text x="480" y="308" font-size="9" text-anchor="middle" fill="var(--ink-muted)">→ 14² × 384ch</text>
+
+        <line x1="420" y1="300" x2="392" y2="300" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+
+        <rect x="270" y="270" width="120" height="60" rx="7" fill="var(--gated-soft)" stroke="var(--gated)" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="330" y="294" font-size="10.5" text-anchor="middle" fill="currentColor">Decoder Up2</text>
+        <text x="330" y="308" font-size="9" text-anchor="middle" fill="var(--ink-muted)">→ 28² × 192ch</text>
+
+        <line x1="270" y1="300" x2="242" y2="300" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+
+        <rect x="120" y="270" width="120" height="60" rx="7" fill="var(--gated-soft)" stroke="var(--gated)" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="180" y="294" font-size="10.5" text-anchor="middle" fill="currentColor">Decoder Up3</text>
+        <text x="180" y="308" font-size="9" text-anchor="middle" fill="var(--ink-muted)">→ 56² × 96ch</text>
+
+        <line x1="180" y1="330" x2="180" y2="358" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+
+        <!-- Row 4: seg head, y 360-420 -->
+        <rect x="120" y="360" width="120" height="60" rx="7" fill="var(--gated-soft)" stroke="var(--gated)" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="180" y="384" font-size="10.5" text-anchor="middle" fill="currentColor">Seg head</text>
+        <text x="180" y="398" font-size="9" text-anchor="middle" fill="var(--ink-muted)">×4 upsample → 224²</text>
+
+        <line x1="180" y1="420" x2="180" y2="448" stroke="var(--gated)" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+
+        <!-- Row 5: seg loss, y 450-520 -->
+        <rect x="80" y="450" width="200" height="70" rx="7" fill="var(--gated-soft)" stroke="var(--gated)" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="180" y="474" font-size="10.5" text-anchor="middle" fill="currentColor" font-weight="700">L_seg</text>
+        <text x="180" y="488" font-size="9" text-anchor="middle" fill="currentColor">BCE + soft Dice</text>
+        <text x="180" y="500" font-size="9" text-anchor="middle" fill="var(--ink-muted)">(0 unless has_mask)</text>
+
+        <!-- combine -->
+        <path d="M 180 520 L 180 570 L 470 570" fill="none" stroke="var(--gated)" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowG)"/>
+        <path d="M 1035 210 L 1035 570 L 730 570" fill="none" stroke="var(--accent2)" stroke-width="1.2" marker-end="url(#arrowA)"/>
+
+        <rect x="470" y="560" width="260" height="60" rx="7" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="600" y="584" font-size="12" text-anchor="middle" fill="currentColor" font-weight="700">L = L_cls + λ · L_seg</text>
+        <text x="600" y="600" font-size="9.5" text-anchor="middle" fill="var(--ink-muted)">λ = 0.3 (--seg-loss-weight)</text>
+      </svg>
+    </div>
+    <figcaption>Solid teal/ochre = trained today (encoder, bottleneck, classification head). Dashed grey = architecturally present but contributes zero gradient until <code>--mask-dir</code> supplies real or pseudo segmentation masks.</figcaption>
+  </figure>
+
+  <div class="callout">
+    <strong>Current status:</strong> no PVWML segmentation masks exist yet, so every run to date has trained the classification branch only. The decoder is fully wired and unit-tested (forward/backward verified), just waiting on mask data — either real annotations or the heuristic pseudo-masks from <code>generate_pseudo_masks.py</code>, which are explicitly not clinical ground truth.
+  </div>
+
+  <footer>
+    Implementation: <code>train_multitask.py</code>, <a href="https://github.com/ahmed-aly-03/wtconv-pvwml">ahmed-aly-03/wtconv-pvwml</a>. Backbone: WTConvNeXt (Finder et al., ECCV 2024).
+  </footer>
+
+</div>
