@@ -37,8 +37,9 @@ later, but that's explicitly out of scope for now).
   value, `SCI` is what was almost certainly meant; check `New_Cohort` value
   counts yourself if that's wrong and edit `NON_VASCULAR_CODES` in the script.
 - Vascular: `CVD`
-- Control: `CN`, excluding Age > 70 (`--control-max-age`) and rows with
-  missing Age (can't verify the cutoff, so excluded rather than assumed).
+- Control: `CN`, all ages included by default. Pass `--control-max-age N`
+  to exclude CN rows above age N (and rows with missing Age, since the
+  cutoff can't be verified for those).
 - vMCIAD: `vMCIAD`
 
 **Design choices, spelled out:**

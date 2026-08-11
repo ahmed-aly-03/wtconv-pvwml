@@ -7,8 +7,9 @@ Class grouping (as specified):
                   "SC" value; SCI is almost certainly what was meant. If
                   that's wrong, edit NON_VASCULAR_CODES below.)
     Vascular:     CVD
-    Control:      CN, with Age > --control-max-age (default 70) excluded,
-                  and rows with missing Age excluded (can't verify the cutoff).
+    Control:      CN, all ages included by default. Pass --control-max-age
+                  to exclude CN rows above a cutoff (and rows with missing
+                  Age, since the cutoff can't be verified for those).
     vMCIAD:       vMCIAD
 
 Each Excel row is one (subject, visit) volume. Splitting is done at the
@@ -131,8 +132,9 @@ def main():
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--adni-folder-name", type=str, default="ANDI",
                          help="Folder name on disk for Database=='ADNI' rows (observed typo as of 2026-08).")
-    parser.add_argument("--control-max-age", type=float, default=70.0,
-                         help="Control (CN) rows with Age > this are excluded. Rows with missing Age are also excluded.")
+    parser.add_argument("--control-max-age", type=float, default=None,
+                         help="If set, Control (CN) rows with Age > this are excluded (rows with missing Age too). "
+                              "Unset by default -- all Control subjects are included regardless of age.")
     parser.add_argument("--train-frac", type=float, default=0.7)
     parser.add_argument("--val-frac", type=float, default=0.15)
     parser.add_argument("--test-frac", type=float, default=0.15)
@@ -171,16 +173,19 @@ def main():
         unmapped.to_csv(os.path.join(args.output_dir, "excluded_unmapped_cohort.csv"), index=False)
     df = df[df["class_key"].notna()].copy()
 
-    # --- filter: control age cutoff ---
-    is_control = df["class_key"] == "control"
-    age_missing = is_control & df["Age"].isna()
-    age_too_old = is_control & df["Age"].notna() & (df["Age"] > args.control_max_age)
-    excluded_control = df[age_missing | age_too_old]
-    if len(excluded_control) > 0:
-        print(f"Excluding {len(excluded_control)} Control rows (age > {args.control_max_age} or missing age): "
-              f"{age_too_old.sum()} too old, {age_missing.sum()} missing age.")
-        excluded_control.to_csv(os.path.join(args.output_dir, "excluded_control_age.csv"), index=False)
-    df = df[~(age_missing | age_too_old)].copy()
+    # --- filter: control age cutoff (opt-in via --control-max-age) ---
+    if args.control_max_age is not None:
+        is_control = df["class_key"] == "control"
+        age_missing = is_control & df["Age"].isna()
+        age_too_old = is_control & df["Age"].notna() & (df["Age"] > args.control_max_age)
+        excluded_control = df[age_missing | age_too_old]
+        if len(excluded_control) > 0:
+            print(f"Excluding {len(excluded_control)} Control rows (age > {args.control_max_age} or missing age): "
+                  f"{age_too_old.sum()} too old, {age_missing.sum()} missing age.")
+            excluded_control.to_csv(os.path.join(args.output_dir, "excluded_control_age.csv"), index=False)
+        df = df[~(age_missing | age_too_old)].copy()
+    else:
+        print("--control-max-age not set: including all Control subjects regardless of age.")
 
     # --- build filepaths, check existence ---
     df["filepath"] = df.apply(lambda r: build_filepath(r, args.data_root, args.adni_folder_name), axis=1)
