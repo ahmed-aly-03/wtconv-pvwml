@@ -150,6 +150,18 @@ def main():
     df = pd.read_excel(args.excel_path, sheet_name="Sheet1")
     total_rows = len(df)
 
+    # Age can contain non-numeric values in real clinical exports (e.g. ADNI's
+    # ">90" top-coding for de-identification, or blank placeholders), which
+    # makes the whole column dtype 'object' and breaks numeric comparison.
+    # Coerce to numeric; anything unparseable becomes NaN, which the
+    # missing-age branch below already excludes Control rows for.
+    age_raw_non_numeric = df["Age"].apply(lambda v: pd.notna(v) and not isinstance(v, (int, float)))
+    if age_raw_non_numeric.any():
+        examples = df.loc[age_raw_non_numeric, "Age"].unique()[:10]
+        print(f"Note: {age_raw_non_numeric.sum()} rows have a non-numeric Age value (e.g. {list(examples)}); "
+              f"coercing to numeric, unparseable ones become NaN (Control rows with NaN Age are excluded below).")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
+
     # --- filter: valid label ---
     df["class_key"] = df["New_Cohort"].apply(lambda v: classify_cohort(v) if pd.notna(v) else None)
     unmapped = df[df["class_key"].isna()]
