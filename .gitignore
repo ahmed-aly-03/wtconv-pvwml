@@ -6,3 +6,12 @@ outputs*/
 *_history.csv
 *_validation_metrics.txt
 .DS_Store
+
+# Never commit clinical/subject-level data or anything prepare_dataset.py produces from it
+*.xlsx
+*.xls
+manifest.csv
+missing_files.csv
+excluded_*.csv
+extraction_errors.csv
+swml_vols*/

@@ -23,6 +23,70 @@ Both scripts print a `sklearn` classification report + confusion matrix at
 the end and save them (plus per-epoch history and the best checkpoint) into
 whatever `--output-dir` you pass on the CLI.
 
+## Data preparation: `prepare_dataset.py`
+
+Turns the full registered FLAIR volumes (`.../Data/{Database}_Registered/{Database}/vols/*.nii.gz`)
+into the same train/val/test `ImageFolder` layout the training scripts already
+expect, using `WML_Prevalence.xlsx`'s `New_Cohort` column for labels. It
+does NOT touch `wmls`/`vents` (those look like real WML segmentation masks
+and ventricle masks -- worth wiring into script 1's segmentation branch
+later, but that's explicitly out of scope for now).
+
+**Class grouping:**
+- Non-vascular: `ADMCI, ALS, FTD, LBD, PD, SCI` -- the sheet has no `SC`
+  value, `SCI` is what was almost certainly meant; check `New_Cohort` value
+  counts yourself if that's wrong and edit `NON_VASCULAR_CODES` in the script.
+- Vascular: `CVD`
+- Control: `CN`, excluding Age > 70 (`--control-max-age`) and rows with
+  missing Age (can't verify the cutoff, so excluded rather than assumed).
+- vMCIAD: `vMCIAD`
+
+**Design choices, spelled out:**
+- Splitting is done by **subject** (`ID` column), not by row/visit -- a
+  subject's multiple visits never end up split across train/val/test.
+- **All valid visits are used**, not baseline-only, since most subjects
+  have multiple visits and dropping them would throw away most of the data
+  (this can be changed if you actually wanted baseline-only).
+- `ADNI` rows map to the `ANDI_Registered` folder (yes, that's a typo on
+  disk, not in the code) -- override with `--adni-folder-name` if that gets
+  fixed server-side.
+- Slices: the middle 50% of axial slices per volume (`--slice-fraction`),
+  matching the naming of the earlier `swml_vols_middle50_4class` dataset,
+  intensity-normalized per-volume (not per-slice, to avoid brightness
+  jitter between adjacent slices) and reoriented to a canonical orientation
+  via `nibabel.as_closest_canonical` so slicing is consistent across the
+  4 different source cohorts/scanners.
+
+**Always run `--dry-run` first.** It does the Excel parsing, file-path
+construction, existence checks, and subject-level splitting, and writes a
+coverage report (`found/total` per Database x class) plus `manifest.csv` --
+all without the slow part (extracting ~7,000 volumes). If `--adni-folder-name`
+or `--data-root` is wrong, this is where you'll see it (near-zero coverage
+for that Database), before wasting an hour on the full run.
+
+```bash
+python prepare_dataset.py \
+  --excel-path /path/to/WML_Prevalance.xlsx \
+  --data-root "/home/sharedFolder/Spatial WML/Data" \
+  --output-dir /home/ra/aaly/WTConv/wtconvnext/swml_vols_full_4class \
+  --dry-run
+```
+
+Check the printed coverage table and `swml_vols_full_4class/manifest.csv`.
+Once it looks right, rerun the exact same command without `--dry-run`:
+
+```bash
+python prepare_dataset.py \
+  --excel-path /path/to/WML_Prevalance.xlsx \
+  --data-root "/home/sharedFolder/Spatial WML/Data" \
+  --output-dir /home/ra/aaly/WTConv/wtconvnext/swml_vols_full_4class \
+  --num-workers 16
+```
+
+**Never commit the Excel file or anything this script produces** (subject
+IDs, ages, diagnoses) -- `.gitignore` already blocks `*.xlsx`, `manifest.csv`,
+and `swml_vols*/`, but keep it that way; this repo is public.
+
 ## Classification loss: Asymmetric Loss (ASL) is now the default
 
 A full TDLF run (SCL stage 1 + CE stage 2, class-balanced sampling) landed at
